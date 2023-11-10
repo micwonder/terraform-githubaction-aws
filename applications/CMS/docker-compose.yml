@@ -1,0 +1,68 @@
+---
+version: "3.3"
+
+volumes:
+  cms_content: {}
+
+networks:
+  default:
+    external: true
+    name: podman
+
+services: 
+  ghost: 
+    environment:
+      url: 'https://lumeo.network'
+      database__client: 'sqlite3'
+      database__connection__filename: '/var/lib/ghost/content/data/ghost.db'
+      mail__transport: 'SMTP'
+      mail__options__host: smtp.sendgrid.net
+      mail__options__port: 465
+      mail__options__secureConnection: true
+      mail__options__requiresAuth: true
+      mail__options__auth__user: apikey
+      mail__options__auth__pass: "{{MAIL_AUTH_TOKEN}}"
+      mail__from: "Lumeo Network <noreply@lumeo.network>"
+    ports:
+      - "9081:2368/tcp"
+    volumes:
+      - ./data/content:/var/lib/ghost/content:rw
+    restart: on-failure:3
+    image: ghost:5.72.0-alpine
+
+  backup:
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 5s
+
+      rollback_config:
+        parallelism: 2
+        delay: 10s
+        monitor: 10s
+        order: start-first
+        failure_action: continue
+
+      update_config:
+        parallelism: 2
+        delay: 10s
+        monitor: 10s
+        order: start-first
+        failure_action: rollback
+      resources:
+        limits:
+          memory: 25M
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./backups:/archive
+      - cms_content:/backup/cms_content-snapshot:ro
+    environment:
+      BACKUP_LATEST_SYMLINK: backup-latest.tar.gz
+      BACKUP_FILENAME: backup-%s.tgz
+      BACKUP_PRUNING_PREFIX: backup-
+      BACKUP_COMPRESSION: "gz"
+      BACKUP_RETENTION_DAYS: '14'
+      BACKUP_CRON_EXPRESSION: "0 4 * * SUN"
+      GPG_PASSPHRASE: "{{GPG_PASSPHRASE}}"
+    image: offen/docker-volume-backup:latest
