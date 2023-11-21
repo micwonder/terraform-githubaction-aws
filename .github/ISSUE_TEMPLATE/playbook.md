@@ -1,3 +1,11 @@
+---
+name: 🧰 Runbook
+about: Define a System Operation or Procedure run book
+title: '[Runbook] <title>'
+labels: Doc, Needs Triage
+assignees: ''
+---
+
 # Run Book / System Operation Manual
 
 ## Service or system overview
