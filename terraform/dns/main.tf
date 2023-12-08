@@ -29,6 +29,7 @@ module "cloudflare_dns_records" {
   zone_id       = cloudflare_zones.main.id
   multi_records =  [
     ["uptime"                , "lumeonetwork.statushub.io", 0, "CNAME", "false"],
+    ["status"                , "lumeonetwork.checkly-dashboards.com", 0, "CNAME", "false"],
     ["@"                     , "mail.@", 10, "MX", "false"],
     ["@"                     , "0 issue \"letsencrypt.org\"", 0, "CAA", "false"],
     ["*"                     , "cname.vercel-dns.com.", 0, "CNAME", "true"],
