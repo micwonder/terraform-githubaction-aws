@@ -55,7 +55,6 @@ variable "members" {
     { username = "denzuko", role = "owner", teams = ["lumeo-triage", "lumeo-readonly"] },
     { username = "DontaeL", role = "owner", teams = ["lumeo-triage", "lumeo-readonly"] },
     { username = "Greg-Lumeo", role = "member", teams = ["lumeo-triage", "lumeo-readonly"] },
-    { username = "SimzBochner37", role = "member", teams = ["lumeo-triage", "lumeo-readonly"] },
     { username = "mjalpha", role = "member", teams = ["lumeo-triage", "lumeo-readonly"] },
     { username = "defense_scoping", role = "member", teams = ["lumeo-readonly"] }
   ]
