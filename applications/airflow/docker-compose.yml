@@ -1,0 +1,158 @@
+---
+version: '3.9'
+
+volumes:
+  postgres:
+  db-snapshots:
+  airflow-logs:
+  airflow-plugins:
+  airflow-data:
+  airflow-dags:
+
+networks:
+  default:
+    external: true
+    name: public
+  internal:
+    external: true
+    name: internal
+
+x-airflow-common:
+  &airflow-common
+  image: apache/airflow:slim-2.9.0-python3.11
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:postgres@postgres:5432/airflow
+    - AIRFLOW__CORE__FERNET_KEY=FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    - AIRFLOW__CORE__LOGGING_LEVEL=INFO
+    - TZ=utc
+    - DOMAINNAME=${DOMAINNAME}
+  volumes:
+    - airflow-dags:/opt/airflow/dags
+    - airflow-logs:/opt/airflow/logs
+    - airflow-plugins:/opt/airflow/plugins
+    - airflow-data:/opt/airflow/airflow.cfg
+  depends_on:
+    postgres:
+      condition: service_healthy
+  deploy:
+    restart_policy:
+      condition: on-failure
+    labels:
+      orbiter: "false"
+      traefik.enabled: "false"
+
+services:
+
+  postgres:
+    deploy:
+      labels:
+        docker-volume-backup.archive-pre: >
+          /bin/sh -c 'pg_dump airflow > /tmp/dumps/dump.sql'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=airflow
+      - POSTGRES_PORT=5432
+    ports:
+      - "5432:5432"
+    networks:
+      internal:
+        aliases:
+          - postgres
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - db-snapshots:/tmp/dumps
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "pg_isready -d airflow"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    image: postgres:14
+
+  backup:
+    deploy:
+      resources:
+        limits:
+          memory: 25M
+    environment:
+      BACKUP_LATEST_SYMLINK: backup-latest.tar.gz
+      BACKUP_FILENAME: backup-%Y-%m-%dT%H-%M-%S.tar.gz
+      BACKUP_PRUNING_PREFIX: backup-
+      BACKUP_COMPRESSION: "gz"
+      BACKUP_RETENTION_DAYS: '14'
+      BACKUP_CRON_EXPRESSION: "0 2 * * *"
+      GPG_PASSPHRASE: SecurityIsCool123
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - db-snapshots:/backup/airflow-db-snapshot:ro
+      - ./backups:/archive
+    depends_on:
+      - postgres
+    image: offen/docker-volume-backup:latest
+
+  init:
+    << : *airflow-common
+    entrypoint: /bin/bash
+    depends_on:
+      - postgres
+      - airflow-webserver
+    command:
+      - -c
+      - airflow users list || ( airflow db init &&
+        airflow users create
+          --role Admin
+          --username airflow
+          --password airflow
+          --email airflow@${DOMAINNAME}
+          --firstname airflow
+          --lastname airflow )
+
+  webserver:
+    << : *airflow-common
+    command: airflow webserver
+    depends_on:
+      -  postgres
+    deploy:
+      labels:
+        traefik.enabled: "true" 
+        traefik.frontend.rule: "Host: airflow.${DOMAINNAME}"
+        traefik.frontend.port: 8080
+        traefik.frontend.priority: 10
+        traefik.frontend.errors.network.backend: "error"
+        traefik.frontend.errors.network.query: "/"
+        traefik.frontend.errors.network.status: "404,500-511"
+        traefik.frontned.entrypoints: 'http,https,ws,wss'
+        traefik.port: 80
+    ports:
+      - 8080/tcp
+    networks:
+      - internal
+      - default
+
+  scheduler:
+    << : *airflow-common
+    deploy:
+      replicas: 3
+      mode: replicated
+    command: airflow scheduler
+    depends_on:
+      - postgres
+      - webserver
+
+  worker:
+    << : *airflow-common
+    environment:
+      QUEUE_NAME: default
+    deploy:
+      replicas: 3
+      mode: replicated
+    command: airflow worker
+    depends_on:
+      - postgres
+      - scheduler
+
+...
